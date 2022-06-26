@@ -5,8 +5,14 @@ Bash Script to compare PDF Files
 Install latest binrays of pdftk, imagemagick and poppler-utils
 
 ```bash
-sudo apt-get update
-sudo apt-get install pdftk
-sudo apt-get install poppler-utils 
-sudo apt install imagemagick
+$ sudo apt-get update
+$ sudo apt-get install pdftk
+$ sudo apt-get install poppler-utils 
+$ sudo apt install imagemagick
 ```
+## Usage 
+```bash
+$ ./compare-pdfs.sh [candidate_file_path] [demand_file_path]
+```
+candidate_file_path = full path to canditate file
+demand_file_path = full path to demand file
