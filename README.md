@@ -15,4 +15,5 @@ $ sudo apt install imagemagick
 $ ./compare-pdfs.sh [candidate_file_path] [demand_file_path]
 ```
 candidate_file_path = full path to canditate file
+
 demand_file_path = full path to demand file
