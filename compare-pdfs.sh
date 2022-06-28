@@ -17,6 +17,9 @@ actualDate=$(date +%Y-%m-%d)
 # actual time %H-%M-%S
 actualTime=$(date +%H-%M-%S-%N) 
 
+# create an id for the request
+taskid=$(md5sum <<<"${actualDate}-${actualTime}" | awk '{print $1}')
+
 # full path of candidate file, recieved as parameter
 candidateFilePath="$1"
 
@@ -83,7 +86,7 @@ function check_pdf_readable() {
 # Parameter 2: fileName string
 # Parameter 3: filePrefix string
 function split_pdf() {
-    pdftk $1 burst output ${actaulWorkPath}/${3}_${2%.*}_page_%04d.pdf 2>/dev/null
+    pdftk $1 burst output ${taskid}/${3}_${2%.*}_page%04d.pdf 2>/dev/null
     rcpt=$?
     if [[ ${rcpt} -ne 0 ]]; then
         severity="ERROR"
@@ -98,7 +101,7 @@ function split_pdf() {
 # Parameter 1: filePath string
 # Parameter 2: filepath string
 function convert_png() {
-    pdftoppm -png -singlefile -r  $resolution "${1}" "${actaulWorkPath}/${2%.*}" 
+    pdftoppm -png -singlefile -r  $resolution "${1}" "${taskid}/${2%.*}" 
     rcpo=$?
     if [[ ${rcpo} -ne 0 ]]; then
         severity="ERROR"
@@ -152,10 +155,10 @@ if [[ ! -d ${logPath} ]]; then
         do_log
         exit 1
     else 
-        logFile="${logPath}/compare-pdfs_${actualDate}-${actualTime}.log"
+        logFile="${logPath}/${taskid}.log"
     fi
 else
-    logFile="${logPath}/compare-pdfs_${actualDate}-${actualTime}.log"
+    logFile="${logPath}/${taskid}.log"
 fi
 
 # Check if work dir exists or create it
@@ -195,8 +198,9 @@ fi
 
 
 # MAIN ########################################################################
+
 severity="INFO"
-message="Start processing" 
+message="Start processing request ${taskid}" 
 do_log | tee -a ${logFile}
 
 # Check if file in candidateFilePath exists
@@ -223,11 +227,8 @@ candidateFile=$(basename ${candidateFilePath})
 # filename of the demnad file
 demandFile=$(basename ${demandFilePath})
 
-# actual work path
-actaulWorkPath="${workPath}/${actualDate}-${actualTime}"
-
 # create actual work path
-mkdir -p ${actaulWorkPath}
+mkdir -p ${taskid}
 
 # bursting the candidate pdf into individual pages
 split_pdf ${candidateFilePath} ${candidateFile} ${candidateFilePrefix}  
@@ -236,13 +237,13 @@ split_pdf ${candidateFilePath} ${candidateFile} ${candidateFilePrefix}
 split_pdf ${demandFilePath} ${demandFile} ${demandFilePrefix}
 
 # search all pages from candiate file and write the to array
-candidatePages=($(ls ${actaulWorkPath}/${candidateFilePrefix}_*.pdf))
+candidatePages=($(ls ${taskid}/${candidateFilePrefix}_*.pdf))
 
 # count pages from canditate file
 candidatePageCount=${#candidatePages[@]}
 
 # search all pages from demand file and write the to array
-demandPages=($(ls ${actaulWorkPath}/${demandFilePrefix}_*.pdf))
+demandPages=($(ls ${taskid}/${demandFilePrefix}_*.pdf))
 
 # count pages from demand file
 demandPageCount=${#demandPages[@]}
@@ -276,12 +277,12 @@ for ((i = 0; i < ${#candidatePages[@]}; i++)); do
     convert_png ${demandPage} ${demandPageName}
 
     # create the checksums for the two PNG files
-    candidatePageCecksum=$(sha256sum ${candidatePage%.*}.png | awk '{print $1}')
+    candidatePageCecksum=$(b2sum ${candidatePage%.*}.png | awk '{print $1}')
     severity="INFO"
     message="Checksum candidate page ${pageNumber}: ${candidatePageCecksum}" 
     do_log | tee -a ${logFile}
 
-    demandPageCecksum=$(sha256sum ${demandPage%.*}.png | awk '{print $1}')
+    demandPageCecksum=$(b2sum ${demandPage%.*}.png | awk '{print $1}')
     severity="INFO"
     message="Checksum demand page ${pageNumber}: ${demandPageCecksum}" 
     do_log | tee -a ${logFile}
@@ -301,7 +302,7 @@ for ((i = 0; i < ${#candidatePages[@]}; i++)); do
         comparePageName=${candidatePageName/candidate/compare}
 
         # create compare file name for error page
-        compare_png "${candidatePage%.*}.png" "${demandPage%.*}.png" "$actaulWorkPath/${comparePageName%.*}.png" "${comparePageName%.*}.png"
+        compare_png "${candidatePage%.*}.png" "${demandPage%.*}.png" "$taskid/${comparePageName%.*}.png" "${comparePageName%.*}.png"
     fi
 done
 
@@ -316,10 +317,10 @@ else
 fi
 
 # clean up
-rm -rf $actaulWorkPath
+rm -rf $taskid
 
 severity="INFO"
-message="End processing" 
+message="End processing request ${taskid}" 
 do_log | tee -a ${logFile}
 
 exit ${rc} 
