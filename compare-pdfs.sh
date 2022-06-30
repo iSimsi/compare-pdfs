@@ -3,7 +3,7 @@
 # Descrition: Lightweight bashscript to compare PDF files
 # Copyright:  Simon Schädler © 2022
 # Licence:    GNU GPLv3 
-# Usage:      ./compare-pdfs.sh [candidate_file_path] [demand_file_path]
+# Usage:      ./compare-pdfs.sh [candidate_file_path] [reference_file_path]
 ###############################################################################
 
 # VARIABLES ###################################################################
@@ -23,8 +23,8 @@ taskid=$(md5sum <<<"${actualDate}-${actualTime}" | awk '{print $1}')
 # full path of candidate file, recieved as parameter
 candidateFilePath="$1"
 
-# full path of demand file, recieved as parameter
-demandFilePath="$2"
+# full path of reference file, recieved as parameter
+referenceFilePath="$2"
 
 # dpi resolution for png files
 resolution=300
@@ -38,14 +38,20 @@ outputPath="$scriptPath/output"
 # prefix for candidate files
 candidateFilePrefix="candidate"
 
-# prefix for demand files
-demandFilePrefix="demand"
+# prefix for reference files
+referenceFilePrefix="reference"
 
 # log path
 logPath="$scriptPath/log"
 
 # return code
 rc=0
+
+# declare array for statistics
+declare -a pageStatus
+
+# normaly the page count shoul be equal
+differentPageCount=false
 
 
 # Functions ###################################################################
@@ -54,6 +60,28 @@ rc=0
 # generate log entrys
 function do_log() {
     printf "%-19s %-5s %-s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "${severity}" "${message}"
+}
+
+# function create_statistics()
+# generate statistics
+function create_statistics() {
+    printf "%-s\n" ""
+    printf "%-s\n" "################################### STATISTICS ###################################"
+    printf "%-35s %-s\n" "" "" "Compare Request ID:" "$taskid"
+    printf "%-35s %-s\n" "Candidate file:" "$(basename ${candidateFilePath})"
+    printf "%-35s %-s\n" "Reference file:" "$(basename ${referenceFilePath})"
+    printf "%-35s %-s\n" "Candidate file page count:" "${candidatePageCount}"
+    printf "%-35s %-s\n" "Reference file page count:" "${referencePageCount}"
+    if [ ${differentPageCount} = false ]; then
+        for statusEntry in "${pageStatus[@]}"; do
+            page="$(echo ${statusEntry} | cut -d' ' -f1)"
+            status="$(echo ${statusEntry} | cut -d' ' -f2)"
+            printf "%-35s %-s\n" "Check page ${page}:" "${status}"
+        done
+    fi
+    printf "%-s\n" ""
+    printf "%-s\n" "##################################################################################"
+    printf "%-s\n" ""
 }
 
 # check_file_exists()
@@ -86,12 +114,14 @@ function check_pdf_readable() {
 # Parameter 2: fileName string
 # Parameter 3: filePrefix string
 function split_pdf() {
-    pdftk $1 burst output ${taskid}/${3}_${2%.*}_page%04d.pdf 2>/dev/null
+    pdftk $1 burst output ${workPath}/${taskid}/${3}_${2%.*}_page%04d.pdf 2>/dev/null
     rcpt=$?
     if [[ ${rcpt} -ne 0 ]]; then
         severity="ERROR"
         message="Failed to split ${3} pdf file: ${1}, will terminate the script"
         do_log | tee -a ${logFile}
+        # clean up
+        clean_up
         exit 1
     fi
 }
@@ -101,12 +131,14 @@ function split_pdf() {
 # Parameter 1: filePath string
 # Parameter 2: filepath string
 function convert_png() {
-    pdftoppm -png -singlefile -r  $resolution "${1}" "${taskid}/${2%.*}" 
+    pdftoppm -png -singlefile -r  $resolution "${1}" "${workPath}/${taskid}/${2%.*}" 
     rcpo=$?
     if [[ ${rcpo} -ne 0 ]]; then
         severity="ERROR"
         message="Failed to convert pdf file to png: ${1}, will terminate the script"
         do_log | tee -a ${logFile}
+        # clean up
+        clean_up
         exit 1
     fi
 }
@@ -114,8 +146,8 @@ function convert_png() {
 # function compare_png()
 # comparing the png files
 # Parameter 1: candidate filePath string
-# Parameter 2: demand filePath string
-# Parameter 3: comapre filePath string
+# Parameter 2: reference filePath string
+# Parameter 3: compare filePath string
 # Parameter 4: output filenName string
 function compare_png() {
     compare "${1}" "${2}" "${3}"
@@ -124,22 +156,30 @@ function compare_png() {
         severity="ERROR"
         message="Comparing ${1} and ${2} failed, will terminate the script"
         do_log | tee -a ${logFile}
-        echo $rcco1
+        # clean up
+        clean_up
         exit 1
     else
-        convert "${3}" "${outputPath}/${4%.*}.pdf"
+        convert "${3}" "${outputPath}/${taskid}/${4%.*}.pdf"
         rcco2=$?
         if [[ ${rcco2} -ne 0 ]]; then
             severity="ERROR"
-            message="Creating compare output file ${outputPath}/${4%.*}.pdf failed, will terminate the script"
+            message="Creating compare output file ${outputPath}/${taskid}/${4%.*}.pdf failed, will terminate the script"
             do_log | tee -a ${logFile}
+            # clean up
+            clean_up
             exit 1
         else 
             severity="INFO"
-            message="Created successfull compare output file ${outputPath}/${4%.*}.pdf"
+            message="Created successfull compare output file ${outputPath}/${taskid}/${4%.*}.pdf"
             do_log | tee -a ${logFile}
         fi
     fi
+}
+
+# function clean_up()
+function clean_up() {
+    rm -rf ${workPath}/${taskid}
 }
 
 
@@ -191,7 +231,7 @@ if [[ $# -ne 2 ]]; then
     message="Wrong count of script parameters!"
     do_log | tee -a ${logFile}
     severity="INFO"
-    message="Usage: ./compare-pdfs.sh [candidate_file_path] [demand_file_path]"
+    message="Usage: ./compare-pdfs.sh [candidate_file_path] [reference_file_path]"
     do_log | tee -a ${logFile}
     exit 1
 fi
@@ -209,119 +249,124 @@ severity="INFO"
 message="Candidate file is: ${candidateFilePath}" 
 do_log | tee -a ${logFile}
 
-# Check if file in demandFilePath exists
-check_pdf_exists ${demandFilePath}
+# Check if file in referenceFilePath exists
+check_pdf_exists ${referenceFilePath}
 severity="INFO"
-message="Demand file is: ${demandFilePath}" 
+message="Reference file is: ${referenceFilePath}" 
 do_log | tee -a ${logFile}
 
 # Check if file in candidateFilePath is readable
 check_pdf_readable ${candidateFilePath}
 
-# Check if file in demandFilePath is readable
-check_pdf_readable ${demandFilePath}
+# Check if file in referenceFilePath is readable
+check_pdf_readable ${referenceFilePath}
 
 # filename of the candidate file
 candidateFile=$(basename ${candidateFilePath})
 
-# filename of the demnad file
-demandFile=$(basename ${demandFilePath})
+# filename of the reference file
+referenceFile=$(basename ${referenceFilePath})
 
 # create actual work path
-mkdir -p ${taskid}
+mkdir -p ${workPath}/${taskid}
 
 # bursting the candidate pdf into individual pages
 split_pdf ${candidateFilePath} ${candidateFile} ${candidateFilePrefix}  
 
-# bursting the demand pdf into individual pages
-split_pdf ${demandFilePath} ${demandFile} ${demandFilePrefix}
+# bursting the reference pdf into individual pages
+split_pdf ${referenceFilePath} ${referenceFile} ${referenceFilePrefix}
 
 # search all pages from candiate file and write the to array
-candidatePages=($(ls ${taskid}/${candidateFilePrefix}_*.pdf))
+candidatePages=($(ls ${workPath}/${taskid}/${candidateFilePrefix}_*.pdf))
 
 # count pages from canditate file
 candidatePageCount=${#candidatePages[@]}
 
-# search all pages from demand file and write the to array
-demandPages=($(ls ${taskid}/${demandFilePrefix}_*.pdf))
+# search all pages from reference file and write the to array
+referencePages=($(ls ${workPath}/${taskid}/${referenceFilePrefix}_*.pdf))
 
-# count pages from demand file
-demandPageCount=${#demandPages[@]}
+# count pages from reference file
+referencePageCount=${#referencePages[@]}
 
 # compare page counts
-if [[ $candidatePageCount -ne  $demandPageCount ]]; then
+if [[ $candidatePageCount -ne  $referencePageCount ]]; then
     severity="ERROR"
-    message="Page length of candidate ($candidatePageCount) and demand ($demandPageCount) file is different, will terminate the script" 
+    message="Page length of candidate ($candidatePageCount) and reference ($referencePageCount) file is different, will terminate the script" 
     do_log | tee -a ${logFile}
+    differentPageCount=true
+    # create statistics
+    create_statistics | tee -a ${logFile}
+    # clean up
+    clean_up
     exit 2
 else
     severity="INFO"
-    message="Page length of candidate ($candidatePageCount) and demand ($demandPageCount) file is eqaul" 
+    message="Page length of candidate ($candidatePageCount) and reference ($referencePageCount) file is eqaul" 
     do_log | tee -a ${logFile}
 fi
 
 # loop over the individual pages of the candidate file
 for ((i = 0; i < ${#candidatePages[@]}; i++)); do
     
-    # current page files to convert
+    # current page info
     candidatePage="${candidatePages[$i]}"
-    demandPage="${demandPages[$i]}"
+    referencePage="${referencePages[$i]}"
     candidatePageName=$(basename ${candidatePage})
-    demandPageName=$(basename ${demandPage})
+    referencePageName=$(basename ${referencePage})
     pageNumber=$(( $i + 1 ))
 
-    # convert current candidate page file to png
+    # convert current candidate pages file to png
     convert_png ${candidatePage} ${candidatePageName}
+    convert_png ${referencePage} ${referencePageName}
 
-    # convert current  demand page file to png
-    convert_png ${demandPage} ${demandPageName}
-
-    # create the checksums for the two PNG files
+    # create the checksums for the current png files
     candidatePageCecksum=$(b2sum ${candidatePage%.*}.png | awk '{print $1}')
-    severity="INFO"
-    message="Checksum candidate page ${pageNumber}: ${candidatePageCecksum}" 
-    do_log | tee -a ${logFile}
-
-    demandPageCecksum=$(b2sum ${demandPage%.*}.png | awk '{print $1}')
-    severity="INFO"
-    message="Checksum demand page ${pageNumber}: ${demandPageCecksum}" 
-    do_log | tee -a ${logFile}
+    referencePageCecksum=$(b2sum ${referencePage%.*}.png | awk '{print $1}')
 
     # compare the checksums
-    if [[ ${candidatePageCecksum} = ${demandPageCecksum} ]]; then
+    if [[ ${candidatePageCecksum} = ${referencePageCecksum} ]]; then
         severity="INFO"
-        message="Candidate page ${pageNumber} and demand page ${pageNumber} have same checksum" 
+        message="Candidate page ${pageNumber} and reference page ${pageNumber} have same checksum" 
         do_log | tee -a ${logFile}
+        pageStatus+=("${pageNumber} passed")
     else
         severity="WARN"
-        message="Candidate page ${pageNumber} and demand page ${pageNumber} have diffrent checksum, create compare file" 
+        message="Candidate page ${pageNumber} and reference page ${pageNumber} have diffrent checksum, create compare file" 
         do_log | tee -a ${logFile}
+        pageStatus+=("${pageNumber} failed")
         rc=3
+
+        # create actual output path
+        mkdir -p ${outputPath}/${taskid}
 
         # create compare file name for error page
         comparePageName=${candidatePageName/candidate/compare}
 
         # create compare file name for error page
-        compare_png "${candidatePage%.*}.png" "${demandPage%.*}.png" "$taskid/${comparePageName%.*}.png" "${comparePageName%.*}.png"
+        compare_png "${candidatePage%.*}.png" "${referencePage%.*}.png" "$workPath/$taskid/${comparePageName%.*}.png" "${comparePageName%.*}.png"
     fi
 done
 
+# Log Result
 if [[ ${rc} -ne 0 ]]; then
     severity="WARN"
-    message="At least 1 page of the candidate file has differences to the demand file" 
+    message="At least 1 page of the candidate file has differences to the reference file" 
     do_log | tee -a ${logFile}
 else
     severity="INFO"
-    message="No differences between candidate file anddemand file detected, test passed!" 
+    message="No differences between candidate file and reference file detected, test passed!" 
     do_log | tee -a ${logFile}
 fi
 
 # clean up
-rm -rf $taskid
+clean_up
 
 severity="INFO"
 message="End processing request ${taskid}" 
 do_log | tee -a ${logFile}
+
+# create statistics
+create_statistics | tee -a ${logFile}
 
 exit ${rc} 
 

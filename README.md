@@ -25,7 +25,7 @@ Note that information such as the name of the file is not taken into account whe
 
 For each of the two PDF files to be examined, pdftk is used to split the PDFs into individual pages and then convert them to PNG using pdftoppm. Immediately after this, it is checked whether the two PDFs have the same number of pages. If not, the script terminates with an error message (exit code 2).  
 
-If the number of pages of the two PDF files is the same, the checksum is determined for the first pages of the two files (b2sum is used for this). If the checksums are the same, it is assumed that the first pages of both files are identical. If the checksums are different (exit code 3), the first pages of the two files are considered different, and compare creates a PDF file for this page in the output folder. Differences are marked in red in this file.  
+If the number of pages of the two PDF files is the same, the checksum is determined for the PNGs of the first pages of the two files (b2sum is used for this). If the checksums are the same, it is assumed that the first pages of both files are identical. If the checksums are different (exit code 3), the first pages of the two files are considered different, and compare creates a PDF file for this page in the output folder. Differences are marked in red in this file.  
 
 Then this is repeated for each page until all pages of the input files have been checked. At the end, a statistic is created and the script is terminated (exit code 0).  
 
@@ -37,6 +37,6 @@ This script compares the two PDF files page by page, and each pair of pages is c
 
 ```bash
 1 General Error
-2 Page length of candidate and demand file is different
-3 At least 1 page of the candidate file has differences to the demand file
+2 Page length of candidate and reference file is different
+3 At least 1 page of the candidate file has differences to the reference file
 ```
