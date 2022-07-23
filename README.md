@@ -2,7 +2,7 @@
 Bash Script to compare PDF Files
 
 ## Prerequisites
-Install latest binrays of pdftk, imagemagick and poppler-utils  
+Install latest binarys of pdftk, imagemagick and poppler-utils  
 
 ```bash
 $ sudo apt-get update
